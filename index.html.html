@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Activity Spinner Wheel</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Poppins', sans-serif;
+            overflow: hidden;
+            background-color: #1a202c;
+            color: #e2e8f0;
+        }
+        .spinner-container {
+            position: relative;
+            width: 90vw;
+            height: 90vw;
+            max-width: 500px;
+            max-height: 500px;
+        }
+        canvas {
+            display: block;
+            transition: transform 5s cubic-bezier(0.25, 0.1, 0.25, 1);
+            border-radius: 50%;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5), 0 0 40px rgba(255,255,255,0.1) inset;
+        }
+        .pointer {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-left: 15px solid transparent;
+            border-right: 15px solid transparent;
+            border-top: 50px solid #f56565;
+            transform: translate(-50%, -100%) rotate(180deg);
+            z-index: 10;
+            filter: drop-shadow(0 2px 3px rgba(0,0,0,0.5));
+        }
+        .spin-button {
+            padding: 1rem 2rem;
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #1a202c;
+            background-image: linear-gradient(to right, #63b3ed 0%, #4299e1 51%, #3182ce 100%);
+            border: none;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            background-size: 200% auto;
+        }
+        .spin-button:hover {
+            background-position: right center;
+            transform: translateY(-2px);
+            box-shadow: 0 7px 14px rgba(0,0,0,0.1);
+        }
+        .spin-button:disabled {
+            cursor: not-allowed;
+            opacity: 0.7;
+            transform: translateY(0);
+        }
+        .result-modal {
+            transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+        }
+        .confetti {
+            position: absolute;
+            width: 8px;
+            height: 16px;
+            background-color: #f00; /* Fallback, will be overridden by JS */
+            top: -20px; /* Start off-screen */
+            opacity: 1;
+            animation: fall 4s linear forwards;
+        }
+
+        @keyframes fall {
+            to {
+                transform: translateY(110vh) rotate(720deg);
+                opacity: 0;
+            }
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen p-4">
+    <div id="confetti-container" class="fixed inset-0 pointer-events-none z-50 overflow-hidden"></div>
+
+    <h1 class="text-4xl md:text-5xl font-bold text-center mb-6 text-white shadow-lg">Warm-Up Activity Spinner</h1>
+
+    <div class="spinner-container mb-8">
+        <div class="pointer"></div>
+        <canvas id="spinnerCanvas"></canvas>
+    </div>
+
+    <button id="spinBtn" class="spin-button">Spin the Wheel!</button>
+
+    <!-- Result Modal -->
+    <div id="resultModal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 opacity-0 pointer-events-none transform scale-95 result-modal">
+        <div class="bg-gray-800 rounded-2xl shadow-2xl p-8 md:p-12 text-center max-w-md w-full relative transform transition-all duration-300">
+             <button id="closeModal" class="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+            <h2 class="text-2xl font-semibold mb-2 text-gray-300">The activity is...</h2>
+            <p id="resultText" class="text-4xl md:text-5xl font-bold text-blue-400 my-6"></p>
+            <button id="spinAgainBtn" class="spin-button mt-6">Spin again</button>
+        </div>
+    </div>
+
+
+    <script>
+        const canvas = document.getElementById('spinnerCanvas');
+        const spinBtn = document.getElementById('spinBtn');
+        const resultModal = document.getElementById('resultModal');
+        const resultText = document.getElementById('resultText');
+        const closeModal = document.getElementById('closeModal');
+        const pointer = document.querySelector('.pointer');
+        const spinAgainBtn = document.getElementById('spinAgainBtn');
+        const confettiContainer = document.getElementById('confetti-container');
+        const ctx = canvas.getContext('2d');
+
+        const activities = [
+            "Number Talks", "Ten Frame Flash", "Guess My Rule", "Bullseye",
+            "Emoji Puzzles", "Solve-Me Mobiles", "Nerdle", "Esti-Mystery",
+            "Roll to the Top", "Function Machine", "Matchstick Puzzle", "Sumplete"
+        ];
+        
+        const colors = [
+            '#4A5568', '#2D3748', '#2C5282', '#2B6CB0', '#2C7A7B', 
+            '#319795', '#38A169', '#48BB78', '#D69E2E', '#ED8936', 
+            '#DD6B20', '#C53030'
+        ];
+        
+        const numSegments = activities.length;
+        const arcSize = (2 * Math.PI) / numSegments;
+        let currentAngle = 0;
+        let isSpinning = false;
+        
+        let devicePixelRatio = window.devicePixelRatio || 1;
+
+        function resizeCanvas() {
+            const container = canvas.parentElement;
+            const size = Math.min(container.clientWidth, container.clientHeight);
+            canvas.style.width = `${size}px`;
+            canvas.style.height = `${size}px`;
+            canvas.width = Math.floor(size * devicePixelRatio);
+            canvas.height = Math.floor(size * devicePixelRatio);
+            ctx.scale(devicePixelRatio, devicePixelRatio);
+            drawSpinner();
+        }
+
+        function drawSpinner() {
+            const centerX = canvas.width / (2 * devicePixelRatio);
+            const centerY = canvas.height / (2 * devicePixelRatio);
+            const radius = centerX - 10;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.font = `bold ${radius * 0.09}px Poppins`;
+            
+            activities.forEach((activity, i) => {
+                const startAngle = i * arcSize;
+                const endAngle = (i + 1) * arcSize;
+
+                ctx.beginPath();
+                ctx.fillStyle = colors[i % colors.length];
+                ctx.moveTo(centerX, centerY);
+                ctx.arc(centerX, centerY, radius, startAngle, endAngle);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.save();
+                ctx.strokeStyle = '#1a202c';
+                ctx.lineWidth = 4;
+                ctx.stroke();
+                ctx.restore();
+
+                ctx.save();
+                ctx.fillStyle = 'white';
+                ctx.translate(centerX, centerY);
+                ctx.rotate(startAngle + arcSize / 2);
+                
+                ctx.textAlign = 'right';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(activity, radius - (radius * 0.07), 0);
+                ctx.restore();
+            });
+        }
+
+        function spin() {
+            if (isSpinning) return;
+            isSpinning = true;
+            spinBtn.disabled = true;
+            
+            const spinAngle = Math.random() * 360 + 360 * 5;
+            currentAngle += spinAngle;
+            
+            canvas.style.transition = 'transform 5s cubic-bezier(0.25, 0.1, 0.25, 1)';
+            canvas.style.transform = `rotate(${currentAngle}deg)`;
+            
+            canvas.addEventListener('transitionend', () => {
+                const finalAngle = currentAngle % 360;
+                const winningAngle = (270 - finalAngle + 360) % 360;
+                const winningIndex = Math.floor(winningAngle / (360 / numSegments));
+                const winningActivity = activities[winningIndex];
+
+                showResult(winningActivity);
+                isSpinning = false;
+                spinBtn.disabled = false;
+            }, { once: true });
+        }
+        
+        function triggerConfetti() {
+            if (!confettiContainer) return;
+            const confettiCount = 150;
+            const confettiColors = ['#f56565', '#ed8936', '#d69e2e', '#48bb78', '#319795', '#4299e1', '#63b3ed', '#805ad5', '#d53f8c'];
+
+            for (let i = 0; i < confettiCount; i++) {
+                const confetti = document.createElement('div');
+                confetti.classList.add('confetti');
+                confetti.style.left = `${Math.random() * 100}vw`;
+                confetti.style.backgroundColor = confettiColors[Math.floor(Math.random() * confettiColors.length)];
+                confetti.style.transform = `rotate(${Math.random() * 360}deg)`;
+                confetti.style.animationDelay = `${Math.random() * 0.5}s`;
+                confetti.style.animationDuration = `${Math.random() * 2 + 3}s`; // Fall speed
+
+                confetti.addEventListener('animationend', () => {
+                    confetti.remove();
+                });
+
+                confettiContainer.appendChild(confetti);
+            }
+        }
+
+        function showResult(activity) {
+            pointer.style.display = 'none';
+            resultText.textContent = activity;
+            resultModal.classList.remove('opacity-0', 'pointer-events-none', 'scale-95');
+            resultModal.classList.add('opacity-100', 'pointer-events-auto', 'scale-100');
+            triggerConfetti();
+        }
+
+        function hideResult() {
+            pointer.style.display = 'block';
+            resultModal.classList.remove('opacity-100', 'pointer-events-auto', 'scale-100');
+            resultModal.classList.add('opacity-0', 'pointer-events-none', 'scale-95');
+        }
+
+        spinBtn.addEventListener('click', spin);
+        closeModal.addEventListener('click', hideResult);
+        resultModal.addEventListener('click', (e) => {
+             if (e.target === resultModal) {
+                hideResult();
+            }
+        });
+        
+        spinAgainBtn.addEventListener('click', () => {
+            hideResult();
+            setTimeout(spin, 300); // A small delay for the modal to close
+        });
+        
+        window.addEventListener('resize', resizeCanvas);
+        window.onload = resizeCanvas;
+    </script>
+
+</body>
+</html>
+
+
